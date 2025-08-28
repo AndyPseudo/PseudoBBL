@@ -4,7 +4,7 @@ import { extension_settings, getContext } from '../../../extensions.js';
 // ============================================================================
 // CONFIGURATION CONSTANTS
 // ============================================================================
-const EXTENSION_NAME = "PipelineScheduler";
+const EXTENSION_NAME = "PseudoBBL";
 const LOG_PREFIX = `[${EXTENSION_NAME}]`;
 const EXTENSION_FOLDER_PATH = `scripts/extensions/third-party/Pipeline-Scheduler`;
 

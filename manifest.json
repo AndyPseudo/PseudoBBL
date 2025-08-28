@@ -6,5 +6,5 @@
     "css": "styles.css",
     "author": "Pseudo & Claude",
     "version": "1.0.0",
-    "description": "Two-stage AI pipeline with analysis agent for dynamic prompt selection",
+    "description": "Two-stage AI pipeline with analysis agent for dynamic prompt selection"
 }

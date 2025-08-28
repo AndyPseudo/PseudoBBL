@@ -1,11 +1,11 @@
 {
-    "display_name": "PseudoBBL",
+    "display_name": "Pipeline Scheduler",
     "loading_order": 100,
     "requires": [],
     "js": "index.js",
     "css": "styles.css",
-    "author": "Pseudo & Claude",
+    "author": "Assistant",
     "version": "1.0.0",
     "description": "Two-stage AI pipeline with analysis agent for dynamic prompt selection",
-    "homePage": "https://github.com/AndyPseudo/PseudoBBL"
+    "homePage": "https://github.com/yourusername/PipelineScheduler"
 }

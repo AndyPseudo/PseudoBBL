@@ -1,0 +1,114 @@
+<div class="pipeline-scheduler-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>PseudoBBL</b>
+            <div class="inline-drawer-icon fa-solid fa-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <p>Two-stage AI pipeline: Analysis agent selects dynamic prompts, then generation model produces the response.</p>
+            <hr>
+            
+            <!-- Master Enable Toggle -->
+            <div class="form-group">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="ps_enabled">
+                    <span><b>Enable Pipeline Scheduler</b></span>
+                </label>
+                <small>Replace standard generation with two-stage pipeline processing.</small>
+            </div>
+
+            <!-- Pipeline Configuration Container -->
+            <div id="ps_pipeline_container" style="margin-top: 15px; padding: 15px; background-color: #2a2a2a; border-radius: 8px; border: 1px solid #444;">
+                
+                <!-- Stage 1: Analysis Agent -->
+                <div style="margin-bottom: 15px; padding: 10px; background-color: #1e1e1e; border-radius: 6px; border-left: 3px solid #2196F3;">
+                    <h4 style="margin: 0 0 10px 0;">Stage 1 - Analysis Agent</h4>
+                    <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                        <select id="ps_stage1Preset" class="text_pole" style="flex: 1;" title="Parameter preset">
+                            <option value="Default">Default</option>
+                        </select>
+                        <select id="ps_stage1Api" class="text_pole" style="flex: 1;" title="API provider">
+                            <option value="claude">Claude</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="openrouter">OpenRouter</option>
+                        </select>
+                        <input type="text" id="ps_stage1Model" class="text_pole" placeholder="Model name" style="flex: 1;">
+                    </div>
+                    <small>Fast model for analyzing context and selecting prompts. Recommended: Claude Haiku, GPT-4o-mini</small>
+                </div>
+
+                <!-- Stage 2: Generation Model -->
+                <div style="margin-bottom: 15px; padding: 10px; background-color: #1e1e1e; border-radius: 6px; border-left: 3px solid #4CAF50;">
+                    <h4 style="margin: 0 0 10px 0;">Stage 2 - Generation Model</h4>
+                    <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                        <select id="ps_stage2Preset" class="text_pole" style="flex: 1;" title="Parameter preset">
+                            <option value="Default">Default</option>
+                        </select>
+                        <select id="ps_stage2Api" class="text_pole" style="flex: 1;" title="API provider">
+                            <option value="openai">OpenAI</option>
+                            <option value="claude">Claude</option>
+                            <option value="openrouter">OpenRouter</option>
+                        </select>
+                        <input type="text" id="ps_stage2Model" class="text_pole" placeholder="Model name" style="flex: 1;">
+                    </div>
+                    <small>Powerful model for actual response generation. Uses your regular chat model by default.</small>
+                </div>
+
+                <!-- Lorebook Configuration -->
+                <div style="margin-bottom: 15px; padding: 10px; background-color: #1e1e1e; border-radius: 6px; border-left: 3px solid #FF9800;">
+                    <h4 style="margin: 0 0 10px 0;">Dynamic Prompt Lorebook</h4>
+                    <select id="ps_lorebookFile" class="text_pole" style="width: 100%;">
+                        <option value="">-- Select a lorebook file --</option>
+                    </select>
+                    <small>The lorebook containing your dynamic prompts with UIDs.</small>
+                </div>
+
+                <!-- Analysis Prompt Template -->
+                <div style="margin-bottom: 15px; padding: 10px; background-color: #1e1e1e; border-radius: 6px;">
+                    <h4 style="margin: 0 0 10px 0;">Analysis Agent Prompt</h4>
+                    <textarea id="ps_analysisPrompt" class="text_pole" style="width: 100%; height: 200px; font-family: monospace;" 
+                        placeholder="Template for analysis agent. Use {{registry}} and {{history}} placeholders."></textarea>
+                    <button id="ps_resetPrompt" class="menu_button" style="margin-top: 5px;">Reset to Default</button>
+                </div>
+
+                <!-- Advanced Settings -->
+                <div style="margin-bottom: 15px; padding: 10px; background-color: #1e1e1e; border-radius: 6px;">
+                    <h4 style="margin: 0 0 10px 0;">Advanced Settings</h4>
+                    
+                    <div style="margin-bottom: 10px;">
+                        <label>Context Depth: <span id="ps_contextDepthValue">5</span> messages</label>
+                        <input type="range" id="ps_contextDepth" min="3" max="15" value="5" style="width: 100%;">
+                        <small>Number of recent messages to send to analysis agent.</small>
+                    </div>
+                    
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="ps_smartRegeneration" checked>
+                        <span>Smart Regeneration</span>
+                    </label>
+                    <small>On regeneration, inject avoidance prompt for previous attempt.</small>
+                    
+                    <label class="checkbox_label" style="margin-top: 10px;">
+                        <input type="checkbox" id="ps_debugMode">
+                        <span>Debug Mode</span>
+                    </label>
+                    <small>Show detailed logging in browser console.</small>
+                </div>
+
+                <hr style="margin: 20px 0;">
+                
+                <!-- Action Buttons -->
+                <div style="background-color: #1e1e1e; border: 1px solid #444; border-radius: 6px; padding: 15px;">
+                    <button id="ps_dryRun" class="menu_button" style="width: 100%; margin-bottom: 10px; background-color: #2196F3;">
+                        <i class="fa-solid fa-vial"></i> Analysis Dry Run (Test)
+                    </button>
+                    <button id="ps_clearCache" class="menu_button" style="width: 100%; margin-bottom: 10px; background-color: #FF9800;">
+                        <i class="fa-solid fa-trash"></i> Clear Analysis Cache
+                    </button>
+                    <button id="ps_showDebug" class="menu_button" style="width: 100%; background-color: #9C27B0;">
+                        <i class="fa-solid fa-bug"></i> Show Debug Log
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

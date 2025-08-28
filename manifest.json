@@ -1,0 +1,11 @@
+{
+    "display_name": "PseudoBBL",
+    "loading_order": 100,
+    "requires": [],
+    "js": "index.js",
+    "css": "styles.css",
+    "author": "Pseudo & Claude",
+    "version": "1.0.0",
+    "description": "Two-stage AI pipeline with analysis agent for dynamic prompt selection",
+    "homePage": "https://github.com/AndyPseudo/PseudoBBL"
+}

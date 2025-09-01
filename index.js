@@ -1,10 +1,6 @@
-// index.js
-
 import { eventSource, event_types, saveSettings } from '../../../../script.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
-
-// Import the core logic from our new file
 import { 
     runAnalysisStage, 
     activateLorebooks, 
@@ -255,12 +251,6 @@ async function handlePipelineTrigger(eventType) {
     const settings = getSettings();
     pipelineState.lastActivity = Date.now();
     if (!settings.enabled || pipelineState.isRunning) return false;
-    
-    if (window.event && window.event.shiftKey) {
-        log('Pipeline bypassed with Shift key');
-        window.toastr.info('Pipeline bypassed (Shift held)', LOG_PREFIX);
-        return false;
-    }
     
     log('Pipeline triggered', { eventType });
     pipelineState.isRunning = true;
@@ -519,9 +509,21 @@ async function initializeExtension() {
         });
         eventSource.on(event_types.GENERATE_AFTER, () => restoreUserSettings());
 
-        if (event_types.MESSAGE_SWIPED) {
-            eventSource.on(event_types.MESSAGE_SWIPED, () => handlePipelineTrigger('swipe'));
+        const possibleSwipeEvents = ['MESSAGE_SWIPED', 'message_swiped'];
+        let swipeEventNameFound = null;
+        for (const eventName of possibleSwipeEvents) {
+            if (event_types[eventName]) {
+                swipeEventNameFound = event_types[eventName];
+                break;
+            }
         }
+        if (swipeEventNameFound) {
+            eventSource.on(swipeEventNameFound, () => handlePipelineTrigger('swipe'));
+            log('Swipe event listener registered successfully.');
+        } else {
+            log('Could not find a swipe event to register.');
+        }
+
         eventSource.on(event_types.MESSAGE_DELETED, () => {
             pipelineState.cachedAnalysis = null;
             log('Message deleted, cache cleared');

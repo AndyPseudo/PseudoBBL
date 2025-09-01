@@ -710,6 +710,6 @@ function initializeUI() {
 // ============================================================================
     eventSource.on(event_types.APP_READY, () => {
         log('App ready, initializing extension...');
-        setTimeout(initializeExtension, 100);
+        setTimeout(initializeExtension, 2500);
         setInterval(cleanupResources, 300000); // Run cleanup every 5 minutes
 });

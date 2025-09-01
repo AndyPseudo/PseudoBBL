@@ -62,7 +62,7 @@ Outputs: Prose/dialogue
 # Instructions
 1.  **Analyze Context:** Carefully read the "Registry" and the "Recent Context" / "Character Info" provided below.
 2.  **Reasoning:** First, provide a brief, high-level analysis of the current narrative state. Explain which reasoning steps are most crucial for the next AI response and why.
-3.  **Final Output:** Conclude your entire response with a single, specific line containing only the UIDs you have selected. This line MUST be in the exact format: \`<UIDs>24,X,Y,Z,25</UIDs>\`. Do not include any other text after this tag. The list must ALWAYS BEGIN WITH `24` and END WITH `25`
+3.  **Final Output:** Conclude your entire response with a single, specific line containing only the UIDs you have selected. This line MUST be in the exact format: \`<UIDs>24,X,Y,Z,25</UIDs>\`. Do not include any other text after this tag. The list must ALWAYS BEGIN WITH \`24\` and END WITH \`25\`
 # Recent Context
 {{history}}
 
@@ -89,6 +89,38 @@ let userOriginalSettings = {
     api: null,
     model: null
 };
+
+// ============================================================================
+// APP READY MANAGEMENT (FIX)
+// ============================================================================
+let isAppReady = false;
+const readyQueue = [];
+
+function runReadyQueue() {
+    log('App is ready, executing queued tasks...');
+    isAppReady = true;
+    while (readyQueue.length > 0) {
+        const task = readyQueue.shift();
+        try {
+            task();
+        } catch (error) {
+            console.error(`${LOG_PREFIX} A ready-queue task failed to execute:`, error);
+        }
+    }
+}
+
+function queueReadyTask(task) {
+    if (isAppReady) {
+        try {
+            task();
+        } catch (error) {
+            console.error(`${LOG_PREFIX} A direct-execution task failed:`, error);
+        }
+    } else {
+        readyQueue.push(task);
+    }
+}
+
 
 // ============================================================================
 // LOGGING & UTILITIES
@@ -562,27 +594,8 @@ function updateUIState() {
 async function initializeExtension() {
     log('Initializing Pipeline Scheduler...');
     try {
-        const missingDeps = validateDependencies();
-        if (missingDeps.length > 0) {
-            throw new Error(`Missing dependencies: ${missingDeps.join(', ')}`);
-        }
-
+        // Part 1: "Safe" tasks that can run immediately
         extension_settings[EXTENSION_NAME] = { ...defaultSettings, ...extension_settings[EXTENSION_NAME] };
-        const settings = extension_settings[EXTENSION_NAME];
-
-        const settingsErrors = validateSettings(settings);
-        if (settingsErrors.length > 0) {
-            log('Settings validation warnings', { errors: settingsErrors });
-            settings.enabled = false;
-        }
-
-        if (!settings.stage2Model) {
-            const context = getContext();
-            settings.stage2Api = context.api;
-            settings.stage2Model = context.model;
-            log('Set Stage 2 model to user\'s current selection', { api: context.api, model: context.model });
-            saveSettings();
-        }
         
         const extensionBasePath = new URL('.', import.meta.url).href;
         const settingsHtml = await fetch(`${extensionBasePath}settings.html`).then(res => res.text());
@@ -590,22 +603,48 @@ async function initializeExtension() {
         document.getElementById('extensions_settings').insertAdjacentHTML('beforeend', settingsHtml);
         initializeUI();
 
-        eventSource.makeLast(event_types.GENERATE_BEFORE, async () => {
-            const proceed = await handlePipelineTrigger(null, 'generate');
-            if (!proceed) pipelineState.cachedAnalysis = null;
-        });
-        eventSource.on(event_types.GENERATE_AFTER, () => restoreUserSettings());
+        // Part 2: "Dangerous" tasks that must wait for the app to be fully ready
+        queueReadyTask(() => {
+            log('Running deferred initialization tasks...');
+            const settings = extension_settings[EXTENSION_NAME];
 
-        if (event_types.MESSAGE_SWIPED) {
-            eventSource.on(event_types.MESSAGE_SWIPED, () => log('Swipe detected, cache preserved'));
-        }
-        eventSource.on(event_types.MESSAGE_DELETED, () => {
-            pipelineState.cachedAnalysis = null;
-            log('Message deleted, cache cleared');
-        });
+            const missingDeps = validateDependencies();
+            if (missingDeps.length > 0) {
+                throw new Error(`Missing dependencies: ${missingDeps.join(', ')}`);
+            }
 
-        pipelineState.isReady = true;
-        log('Pipeline Scheduler initialized successfully');
+            const settingsErrors = validateSettings(settings);
+            if (settingsErrors.length > 0) {
+                log('Settings validation warnings', { errors: settingsErrors });
+                settings.enabled = false;
+            }
+
+            if (!settings.stage2Model) {
+                const context = getContext();
+                settings.stage2Api = context.api;
+                settings.stage2Model = context.model;
+                log('Set Stage 2 model to user\'s current selection', { api: context.api, model: context.model });
+                saveSettings();
+            }
+
+            // Bind to SillyTavern events now that eventSource is guaranteed to be ready
+            eventSource.makeLast(event_types.GENERATE_BEFORE, async () => {
+                const proceed = await handlePipelineTrigger(null, 'generate');
+                if (!proceed) pipelineState.cachedAnalysis = null;
+            });
+            eventSource.on(event_types.GENERATE_AFTER, () => restoreUserSettings());
+
+            if (event_types.MESSAGE_SWIPED) {
+                eventSource.on(event_types.MESSAGE_SWIPED, () => log('Swipe detected, cache preserved'));
+            }
+            eventSource.on(event_types.MESSAGE_DELETED, () => {
+                pipelineState.cachedAnalysis = null;
+                log('Message deleted, cache cleared');
+            });
+
+            pipelineState.isReady = true;
+            log('Pipeline Scheduler initialized successfully');
+        });
     } catch (error) {
         console.error(`${LOG_PREFIX} Initialization failed:`, error);
         window.toastr.error(`Failed to initialize: ${error.message}. Check console (F12).`, LOG_PREFIX);
@@ -708,8 +747,13 @@ function initializeUI() {
 // ============================================================================
 // EXTENSION ENTRY POINT
 // ============================================================================
-    eventSource.on(event_types.APP_READY, () => {
-        log('App ready, initializing extension...');
-        setTimeout(initializeExtension, 2500);
-        setInterval(cleanupResources, 300000); // Run cleanup every 5 minutes
+$(document).ready(() => {
+    // This is the correct, robust way to hook into the app's lifecycle.
+    // It tells our extension to execute queued tasks ONLY when the app is fully ready.
+    eventSource.on(event_types.APP_READY, runReadyQueue);
+
+    // Start our own initialization process immediately.
+    // It will now queue the "dangerous" tasks that depend on the app being ready.
+    setTimeout(initializeExtension, 100);
+    setInterval(cleanupResources, 300000); // This is safe to start early.
 });

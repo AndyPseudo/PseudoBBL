@@ -1,4 +1,4 @@
-import { eventSource, event_types, saveSettings } from '../../../../script.js';
+import { eventSource, event_types, saveSettings } from '../../../script.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
 import { SillyTavern } from '../../../../SillyTavern.js';

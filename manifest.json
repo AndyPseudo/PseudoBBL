@@ -1,10 +1,11 @@
 {
     "display_name": "PseudoBBL",
     "loading_order": 100,
-    "requires": [],
+    "requires": [https://github.com/LenAnderson/SillyTavern-LALib],
     "js": "index.js",
     "css": "styles.css",
     "author": "Pseudo & Claude",
     "version": "1.0.0",
-    "description": "Two-stage AI pipeline with analysis agent for dynamic prompt selection"
+    "description": "Two-stage AI pipeline with analysis agent for dynamic reasoning prompt selection"
+    "homepage": "https://github.com/AndyPseudo/PseudoBBL"
 }

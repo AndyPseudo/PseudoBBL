@@ -1,8 +1,3 @@
-import { eventSource, event_types, saveSettings } from '../../../script.js';
-import { extension_settings, getContext } from '../../../extensions.js';
-import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
-import { SillyTavern } from '../../../../SillyTavern.js';
-
 // ============================================================================
 // CONFIGURATION CONSTANTS
 // ============================================================================
@@ -73,19 +68,31 @@ Outputs: Prose/dialogue
 {{registry}}
 }`;
 
+// Store module references
+let moduleRefs = {
+    eventSource: null,
+    event_types: null,
+    saveSettings: null,
+    extension_settings: null,
+    getContext: null,
+    callGenericPopup: null,
+    POPUP_TYPE: null,
+    SillyTavern: null
+};
+
 // ============================================================================
 // STATE MANAGEMENT & SETTINGS
 // ============================================================================
 function getSettings() {
-    if (!extension_settings[EXTENSION_NAME]) {
-        extension_settings[EXTENSION_NAME] = { ...defaultSettings };
+    if (!moduleRefs.extension_settings[EXTENSION_NAME]) {
+        moduleRefs.extension_settings[EXTENSION_NAME] = { ...defaultSettings };
     }
     for (const key of Object.keys(defaultSettings)) {
-        if (!Object.hasOwn(extension_settings[EXTENSION_NAME], key)) {
-            extension_settings[EXTENSION_NAME][key] = defaultSettings[key];
+        if (!Object.hasOwn(moduleRefs.extension_settings[EXTENSION_NAME], key)) {
+            moduleRefs.extension_settings[EXTENSION_NAME][key] = defaultSettings[key];
         }
     }
-    return extension_settings[EXTENSION_NAME];
+    return moduleRefs.extension_settings[EXTENSION_NAME];
 }
 
 let pipelineState = {
@@ -167,7 +174,7 @@ function showDebugLog() {
         .reverse().join('\n\n');
     const popupContent = document.createElement('div');
     popupContent.innerHTML = `<h4>Pipeline Scheduler Debug Log</h4><textarea readonly style="width: 100%; height: 70vh; font-family: monospace;">${logContent}</textarea>`;
-    callGenericPopup(popupContent, POPUP_TYPE.TEXT, 'Debug Log', { wide: true, large: true });
+    moduleRefs.callGenericPopup(popupContent, moduleRefs.POPUP_TYPE.TEXT, 'Debug Log', { wide: true, large: true });
 }
 
 // ============================================================================
@@ -227,10 +234,10 @@ async function showModelSelectorPopup(stage) {
     populateModels(currentApi);
     apiSelect.onchange = () => populateModels(apiSelect.value);
 
-    if (await callGenericPopup(popupContent, POPUP_TYPE.CONFIRM, `Select Model for ${stageUpper}`)) {
+    if (await moduleRefs.callGenericPopup(popupContent, moduleRefs.POPUP_TYPE.CONFIRM, `Select Model for ${stageUpper}`)) {
         settings[`${stage}Api`] = apiSelect.value;
         settings[`${stage}Model`] = modelSelect.value;
-        saveSettings();
+        moduleRefs.saveSettings();
         updateApiDisplay(stage);
         window.toastr.success(`Settings saved for ${stageUpper}.`);
     }
@@ -266,7 +273,7 @@ async function runAnalysisStage() {
         await applyModelEnvironment('stage1');
         
         const result = await withTimeout(
-            getContext().executeSlashCommandsWithOptions(`/genraw ${JSON.stringify(analysisPrompt)}`, {
+            moduleRefs.getContext().executeSlashCommandsWithOptions(`/genraw ${JSON.stringify(analysisPrompt)}`, {
                 showOutput: false,
                 handleExecutionErrors: true
             }),
@@ -299,7 +306,7 @@ async function activateLorebooks(uids) {
         }
         for (const uid of uids) {
             const script = `/wi-trigger file="${settings.lorebookFile}" uid=${uid} now=false`;
-            await getContext().executeSlashCommandsWithOptions(script, { showOutput: false, handleExecutionErrors: true });
+            await moduleRefs.getContext().executeSlashCommandsWithOptions(script, { showOutput: false, handleExecutionErrors: true });
         }
         log('Lorebook activation complete');
     } catch (error) {
@@ -333,7 +340,7 @@ function getRecentChatMessages(depth) {
 }
 
 function getCharacterData() {
-    const context = getContext();
+    const context = moduleRefs.getContext();
     if (!context || !context.characterId) return "No character loaded.";
     const character = context.characters[context.characterId];
     if (!character) return "Could not find character data.";
@@ -365,7 +372,7 @@ async function applyModelEnvironment(stage) {
     if (api) commands.push(`/api ${api}`);
     if (model) commands.push(`/model "${model}"`);
     if (commands.length === 0) return;
-    const result = await getContext().executeSlashCommandsWithOptions(commands.join(' | '), { showOutput: false, handleExecutionErrors: true });
+    const result = await moduleRefs.getContext().executeSlashCommandsWithOptions(commands.join(' | '), { showOutput: false, handleExecutionErrors: true });
     if (result?.isError) throw new Error(`Failed to apply ${stage} environment: ${result.errorMessage}`);
 }
 
@@ -384,7 +391,7 @@ async function handlePipelineTrigger(messageId, eventType) {
     pipelineState.isRunning = true;
     showStatusIndicator('Analyzing...');
     
-    const context = getContext();
+    const context = moduleRefs.getContext();
     userOriginalSettings.api = context.api;
     userOriginalSettings.model = context.model;
     log('Saved user settings', { ...userOriginalSettings });
@@ -435,7 +442,7 @@ async function restoreUserSettings() {
             `/api ${userOriginalSettings.api}`,
             `/model "${userOriginalSettings.model}"`
         ];
-        const result = await getContext().executeSlashCommandsWithOptions(
+        const result = await moduleRefs.getContext().executeSlashCommandsWithOptions(
             commands.join(' | '),
             { showOutput: false, handleExecutionErrors: true, timeout: 5000 }
         );
@@ -475,7 +482,7 @@ async function applySmartRegeneration() {
     const lastMessage = document.querySelector('.mes:last-child .mes_text')?.textContent || '';
     const firstSentence = lastMessage.split(/[.!?]/)[0];
     const regenPrompt = `[User regenerated. Generate an alternative response. Avoid starting with or repeating: "${firstSentence}"]`;
-    await getContext().executeSlashCommandsWithOptions(`/inject id=smart_regen position=chat depth=0 role=system ${JSON.stringify(regenPrompt)}`, { showOutput: false, handleExecutionErrors: true });
+    await moduleRefs.getContext().executeSlashCommandsWithOptions(`/inject id=smart_regen position=chat depth=0 role=system ${JSON.stringify(regenPrompt)}`, { showOutput: false, handleExecutionErrors: true });
 }
 
 async function runAnalysisDryRun() {
@@ -500,7 +507,7 @@ async function getLorebookRegistry() {
         return '[ERROR: No lorebook file selected in extension settings.]';
     }
     try {
-        const lorebook = SillyTavern.lorebooks.find(book => book.file_name === lorebookFile);
+        const lorebook = moduleRefs.SillyTavern.lorebooks.find(book => book.file_name === lorebookFile);
         if (!lorebook) {
             log(`Selected lorebook file not found or loaded: ${lorebookFile}`);
             return `[ERROR: The lorebook file "${lorebookFile}" could not be found among the loaded books.]`;
@@ -576,6 +583,26 @@ function updateUIState() {
 async function initializeExtension() {
     log('Initializing Pipeline Scheduler...');
     try {
+        // Import modules first
+        const [scriptModule, extensionsModule, popupModule] = await Promise.all([
+            import('../../../../script.js'),
+            import('../../../extensions.js'),
+            import('../../../popup.js')
+        ]);
+        
+        // Store references
+        moduleRefs.eventSource = scriptModule.eventSource;
+        moduleRefs.event_types = scriptModule.event_types;
+        moduleRefs.saveSettings = scriptModule.saveSettings;
+        moduleRefs.extension_settings = extensionsModule.extension_settings;
+        moduleRefs.getContext = extensionsModule.getContext;
+        moduleRefs.callGenericPopup = popupModule.callGenericPopup;
+        moduleRefs.POPUP_TYPE = popupModule.POPUP_TYPE;
+        
+        // Import SillyTavern module
+        const stModule = await import('../../../../SillyTavern.js');
+        moduleRefs.SillyTavern = stModule.SillyTavern;
+        
         const settings = getSettings();
 
         const extensionBasePath = new URL('.', import.meta.url).href;
@@ -591,26 +618,26 @@ async function initializeExtension() {
         }
 
         if (!settings.stage2Model) {
-            const context = getContext();
+            const context = moduleRefs.getContext();
             settings.stage2Api = context.api;
             settings.stage2Model = context.model;
             log('Set Stage 2 model to user\'s current selection', { api: context.api, model: context.model });
-            saveSettings();
+            moduleRefs.saveSettings();
         }
         
         await populateLorebookOptions(document.getElementById('ps_lorebookFile'));
         updateUIState();
 
-        eventSource.makeLast(event_types.GENERATE_BEFORE, async () => {
+        moduleRefs.eventSource.makeLast(moduleRefs.event_types.GENERATE_BEFORE, async () => {
             const proceed = await handlePipelineTrigger(null, 'generate');
             if (!proceed) pipelineState.cachedAnalysis = null;
         });
-        eventSource.on(event_types.GENERATE_AFTER, () => restoreUserSettings());
+        moduleRefs.eventSource.on(moduleRefs.event_types.GENERATE_AFTER, () => restoreUserSettings());
 
-        if (event_types.MESSAGE_SWIPED) {
-            eventSource.on(event_types.MESSAGE_SWIPED, () => log('Swipe detected, cache preserved'));
+        if (moduleRefs.event_types.MESSAGE_SWIPED) {
+            moduleRefs.eventSource.on(moduleRefs.event_types.MESSAGE_SWIPED, () => log('Swipe detected, cache preserved'));
         }
-        eventSource.on(event_types.MESSAGE_DELETED, () => {
+        moduleRefs.eventSource.on(moduleRefs.event_types.MESSAGE_DELETED, () => {
             pipelineState.cachedAnalysis = null;
             log('Message deleted, cache cleared');
         });
@@ -631,7 +658,7 @@ function initializeUI() {
     if (enableToggle) {
         enableToggle.onchange = () => {
             settings.enabled = enableToggle.checked;
-            saveSettings();
+            moduleRefs.saveSettings();
             updateUIState();
             window.toastr.info(`PseudoBBL pipeline ${settings.enabled ? 'enabled' : 'disabled'}.`, LOG_PREFIX);
         };
@@ -646,7 +673,7 @@ function initializeUI() {
     if (lorebookSelect) {
         lorebookSelect.onchange = () => {
             settings.lorebookFile = lorebookSelect.value;
-            saveSettings();
+            moduleRefs.saveSettings();
         };
     }
 
@@ -655,12 +682,12 @@ function initializeUI() {
     if (analysisPrompt && resetPromptBtn) {
         analysisPrompt.oninput = () => {
             settings.analysisPromptTemplate = analysisPrompt.value;
-            saveSettings();
+            moduleRefs.saveSettings();
         };
         resetPromptBtn.onclick = () => {
             analysisPrompt.value = DEFAULT_ANALYSIS_PROMPT;
             settings.analysisPromptTemplate = DEFAULT_ANALYSIS_PROMPT;
-            saveSettings();
+            moduleRefs.saveSettings();
         };
     }
 
@@ -669,7 +696,7 @@ function initializeUI() {
         contextDepth.oninput = () => {
             settings.contextDepth = parseInt(contextDepth.value);
             document.getElementById('ps_contextDepthValue').textContent = contextDepth.value;
-            saveSettings();
+            moduleRefs.saveSettings();
         };
     }
 
@@ -677,7 +704,7 @@ function initializeUI() {
     if (smartRegen) {
         smartRegen.onchange = () => {
             settings.smartRegeneration = smartRegen.checked;
-            saveSettings();
+            moduleRefs.saveSettings();
         };
     }
 
@@ -685,7 +712,7 @@ function initializeUI() {
     if (debugMode) {
         debugMode.onchange = () => {
             settings.debugMode = debugMode.checked;
-            saveSettings();
+            moduleRefs.saveSettings();
         };
     }
 
@@ -710,7 +737,9 @@ function initializeUI() {
 // ============================================================================
 // EXTENSION ENTRY POINT
 // ============================================================================
-$(document).ready(() => {
+jQuery(async () => {
+    const { eventSource, event_types } = await import('../../../../script.js');
+    
     eventSource.on(event_types.APP_READY, () => {
         setTimeout(initializeExtension, 100);
         setInterval(cleanupResources, 300000);

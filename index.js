@@ -1,7 +1,16 @@
+// index.js
+
 import { eventSource, event_types, saveSettings } from '../../../../script.js';
 import { extension_settings, getContext } from '../../../extensions.js';
-import { callGenericPopup, POP_TYPE } from '../../../popup.js';
-import { SillyTavern } from '../../../../SillyTavern.js';
+import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
+
+// Import the core logic from our new file
+import { 
+    runAnalysisStage, 
+    activateLorebooks, 
+    applyModelEnvironment, 
+    getLorebookRegistry 
+} from './pipeline.js';
 
 // ============================================================================
 // CONFIGURATION CONSTANTS
@@ -129,38 +138,6 @@ function cleanupResources() {
     }
 }
 
-function validateSettings(settings) {
-    const errors = [];
-    if (settings.contextDepth < 1 || settings.contextDepth > 50) {
-        errors.push('Context depth must be between 1 and 50');
-    }
-    if (settings.enabled && !settings.stage1Api) {
-        errors.push('Stage 1 API must be selected when enabled');
-    }
-    if (settings.enabled && !settings.lorebookFile) {
-        errors.push('Lorebook file must be selected when enabled');
-    }
-    return errors;
-}
-
-function safeQuerySelector(selector, context = document) {
-    try {
-        return context.querySelector(selector);
-    } catch (error) {
-        log(`Failed to query selector: ${selector}`, { error: error.message });
-        return null;
-    }
-}
-
-function withTimeout(promise, timeoutMs = 30000) {
-    return Promise.race([
-        promise,
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
-        )
-    ]);
-}
-
 function showDebugLog() {
     const logContent = pipelineState.debugLog
         .map(entry => `[${entry.timestamp}] ${entry.message}` + (entry.data ? `\n  Data: ${JSON.stringify(entry.data, null, 2)}` : ''))
@@ -171,7 +148,7 @@ function showDebugLog() {
 }
 
 // ============================================================================
-// API & MODEL SELECTION POPUP
+// UI & POPUPS
 // ============================================================================
 async function showModelSelectorPopup(stage) {
     const settings = getSettings();
@@ -243,89 +220,21 @@ function updateApiDisplay(stage) {
     }
 }
 
-// ============================================================================
-// PIPELINE CORE FUNCTIONS
-// ============================================================================
-async function runAnalysisStage() {
-    const settings = getSettings();
-    log('Starting analysis stage...');
-    try {
-        const recentMessages = getRecentChatMessages(settings.contextDepth);
-        const characterProfile = getCharacterData();
-        const registryContent = await getLorebookRegistry();
-
-        let analysisPrompt = (settings.analysisPromptTemplate || DEFAULT_ANALYSIS_PROMPT)
-            .replace('{{registry}}', registryContent)
-            .replace('{{history}}', recentMessages)
-            .replace('{{character}}', characterProfile);
-        
-        await applyModelEnvironment('stage1');
-        
-        const result = await withTimeout(
-            getContext().executeSlashCommandsWithOptions(`/genraw ${JSON.stringify(analysisPrompt)}`, {
-                showOutput: false,
-                handleExecutionErrors: true
-            }),
-            45000
-        );
-
-        if (result?.isError) throw new Error(`Analysis failed: ${result.errorMessage}`);
-        
-        const uids = parseUIDs(result.pipe || '');
-        log('Analysis complete', { uids });
-        return uids;
-    } catch (error) {
-        log('Analysis stage error', { error: error.message });
-        throw error;
-    }
-}
-
-async function activateLorebooks(uids) {
-    const settings = getSettings();
-    log('Activating lorebook entries', { uids });
-    if (!settings.lorebookFile) {
-        log('No lorebook file configured');
-        return;
-    }
-    try {
-        if (typeof window.LALib === 'undefined') {
-            log('LALib not available - skipping lorebook activation');
-            window.toastr.warning('LALib extension not found. Dynamic prompts cannot be activated.', LOG_PREFIX);
-            return;
-        }
-        for (const uid of uids) {
-            const script = `/wi-trigger file="${settings.lorebookFile}" uid=${uid} now=false`;
-            await getContext().executeSlashCommandsWithOptions(script, { showOutput: false, handleExecutionErrors: true });
-        }
-        log('Lorebook activation complete');
-    } catch (error) {
-        log('Lorebook activation error', { error: error.message });
-        throw error;
-    }
-}
-
 function getRecentChatMessages(depth) {
-    try {
-        const chatDiv = safeQuerySelector('#chat');
-        if (!chatDiv) {
-            log('Chat div not found');
-            return 'No chat history available.';
-        }
-        const messages = Array.from(chatDiv.querySelectorAll('.mes'))
-            .slice(-Math.max(1, depth))
-            .map(msg => {
-                const nameEl = safeQuerySelector('.ch_name', msg);
-                const textEl = safeQuerySelector('.mes_text', msg);
-                const name = nameEl?.textContent?.trim() || 'Unknown';
-                const text = textEl?.textContent?.trim() || '';
-                return `${name}: ${text}`;
-            })
-            .filter(msg => msg.trim() !== ': ');
-        return messages.length > 0 ? messages.join('\n') : 'No valid messages found.';
-    } catch (error) {
-        log('Error getting chat messages', { error: error.message });
-        return 'Error retrieving chat history.';
-    }
+    const chatDiv = document.querySelector('#chat');
+    if (!chatDiv) return 'No chat history available.';
+    
+    const messages = Array.from(chatDiv.querySelectorAll('.mes'))
+        .slice(-Math.max(1, depth))
+        .map(msg => {
+            const nameEl = msg.querySelector('.ch_name');
+            const textEl = msg.querySelector('.mes_text');
+            const name = nameEl?.textContent?.trim() || 'Unknown';
+            const text = textEl?.textContent?.trim() || '';
+            return `${name}: ${text}`;
+        })
+        .filter(msg => msg.trim() !== ': ');
+    return messages.length > 0 ? messages.join('\n') : 'No valid messages found.';
 }
 
 function getCharacterData() {
@@ -339,33 +248,10 @@ function getCharacterData() {
     return profile.trim();
 }
 
-function parseUIDs(text) {
-    const match = text.match(/<UIDs>(.*?)<\/UIDs>/);
-    if (!match || !match[1]) {
-        log('UID tag not found in analysis response. No entries will be activated.');
-        return [];
-    }
-    const uidsString = match[1];
-    if (uidsString.trim() === '') return [];
-    return uidsString.split(',')
-        .map(n => parseInt(n.trim()))
-        .filter(n => !isNaN(n));
-}
-
-async function applyModelEnvironment(stage) {
-    const settings = getSettings();
-    const api = settings[`${stage}Api`];
-    const model = settings[`${stage}Model`];
-    log(`Applying ${stage} environment`, { api, model });
-    const commands = [];
-    if (api) commands.push(`/api ${api}`);
-    if (model) commands.push(`/model "${model}"`);
-    if (commands.length === 0) return;
-    const result = await getContext().executeSlashCommandsWithOptions(commands.join(' | '), { showOutput: false, handleExecutionErrors: true });
-    if (result?.isError) throw new Error(`Failed to apply ${stage} environment: ${result.errorMessage}`);
-}
-
-async function handlePipelineTrigger(messageId, eventType) {
+// ============================================================================
+// PIPELINE ORCHESTRATION
+// ============================================================================
+async function handlePipelineTrigger(eventType) {
     const settings = getSettings();
     pipelineState.lastActivity = Date.now();
     if (!settings.enabled || pipelineState.isRunning) return false;
@@ -376,7 +262,7 @@ async function handlePipelineTrigger(messageId, eventType) {
         return false;
     }
     
-    log('Pipeline triggered', { messageId, eventType });
+    log('Pipeline triggered', { eventType });
     pipelineState.isRunning = true;
     showStatusIndicator('Analyzing...');
     
@@ -388,6 +274,7 @@ async function handlePipelineTrigger(messageId, eventType) {
     try {
         const isRegeneration = eventType === 'swipe' || eventType === 'regenerate';
         let uidsToActivate = [];
+
         if (isRegeneration && pipelineState.cachedAnalysis) {
             log('Using cached analysis for regeneration');
             uidsToActivate = pipelineState.cachedAnalysis;
@@ -397,23 +284,35 @@ async function handlePipelineTrigger(messageId, eventType) {
             }
         } else {
             showStatusIndicator('Running analysis...');
-            uidsToActivate = await runAnalysisStage();
+            const recentMessages = getRecentChatMessages(settings.contextDepth);
+            const characterProfile = getCharacterData();
+            const registryContent = await getLorebookRegistry(settings.lorebookFile);
+
+            const analysisPrompt = (settings.analysisPromptTemplate || DEFAULT_ANALYSIS_PROMPT)
+                .replace('{{registry}}', registryContent)
+                .replace('{{history}}', recentMessages)
+                .replace('{{character}}', characterProfile);
+            
+            uidsToActivate = await runAnalysisStage(settings, analysisPrompt);
             pipelineState.cachedAnalysis = uidsToActivate;
+            log('Analysis complete', { uids: uidsToActivate });
         }
+
         if (uidsToActivate.length > 0) {
             showStatusIndicator('Activating prompts...');
-            await activateLorebooks(uidsToActivate);
+            await activateLorebooks(settings, uidsToActivate);
+            log('Lorebook activation complete');
         }
         
-        await applyModelEnvironment('stage2');
+        await applyModelEnvironment(settings, 'stage2');
         showStatusIndicator('Generating response...');
         log('Pipeline setup complete, generation will proceed');
-        return true;
+        return true; // Allow generation to proceed
     } catch (error) {
         log('Pipeline failed', { error: error.message });
         window.toastr.error(`Pipeline failed: ${error.message}`, LOG_PREFIX);
         await restoreUserSettings();
-        return false;
+        return false; // Block generation
     } finally {
         pipelineState.isRunning = false;
         hideStatusIndicator();
@@ -431,13 +330,10 @@ async function restoreUserSettings() {
             `/api ${userOriginalSettings.api}`,
             `/model "${userOriginalSettings.model}"`
         ];
-        const result = await getContext().executeSlashCommandsWithOptions(
+        await getContext().executeSlashCommandsWithOptions(
             commands.join(' | '),
             { showOutput: false, handleExecutionErrors: true, timeout: 5000 }
         );
-        if (result?.isError) {
-            throw new Error(`Settings restoration failed: ${result.errorMessage}`);
-        }
         userOriginalSettings.api = null;
         userOriginalSettings.model = null;
         log('User settings restored successfully');
@@ -478,40 +374,22 @@ async function runAnalysisDryRun() {
     log('Running analysis dry run...');
     window.toastr.info('Running analysis dry run...', LOG_PREFIX);
     try {
-        const uids = await runAnalysisStage();
+        const settings = getSettings();
+        const recentMessages = getRecentChatMessages(settings.contextDepth);
+        const characterProfile = getCharacterData();
+        const registryContent = await getLorebookRegistry(settings.lorebookFile);
+        const analysisPrompt = (settings.analysisPromptTemplate || DEFAULT_ANALYSIS_PROMPT)
+            .replace('{{registry}}', registryContent)
+            .replace('{{history}}', recentMessages)
+            .replace('{{character}}', characterProfile);
+            
+        const uids = await runAnalysisStage(settings, analysisPrompt);
         const message = `Analysis would activate UIDs: ${uids.join(', ') || 'None'}`;
         log('Dry run complete', { uids });
         window.toastr.success(message, 'Analysis Dry Run');
     } catch (error) {
         log('Dry run failed', { error: error.message });
         window.toastr.error(`Dry run failed: ${error.message}`, LOG_PREFIX);
-    }
-}
-
-async function getLorebookRegistry() {
-    const settings = getSettings();
-    const lorebookFile = settings.lorebookFile;
-    if (!lorebookFile) {
-        log('No lorebook file selected in settings.');
-        return '[ERROR: No lorebook file selected in extension settings.]';
-    }
-    try {
-        const lorebook = SillyTavern.lorebooks.find(book => book.file_name === lorebookFile);
-        if (!lorebook) {
-            log(`Selected lorebook file not found or loaded: ${lorebookFile}`);
-            return `[ERROR: The lorebook file "${lorebookFile}" could not be found among the loaded books.]`;
-        }
-        const entries = Object.values(lorebook.entries);
-        if (entries.length === 0) return '[NOTICE: The selected lorebook is empty or has no entries.]';
-        const registryLines = entries.map(entry => {
-            const promptName = entry.comment || 'Untitled Prompt';
-            const firstLine = entry.content.split('\n').find(line => line.trim() !== '') || 'No description.';
-            return `[UID: ${entry.uid}] ${promptName} - ${firstLine.trim()}`;
-        });
-        return registryLines.join('\n');
-    } catch (error) {
-        log('Failed to build dynamic lorebook registry', { error: error.message, stack: error.stack });
-        return `[CRITICAL ERROR: Failed to process lorebook file. Check browser console for details.]`;
     }
 }
 
@@ -528,7 +406,7 @@ async function populateLorebookOptions(selectElement) {
 }
 
 // ============================================================================
-// UI STATE MANAGEMENT
+// UI STATE & INITIALIZATION
 // ============================================================================
 function updateUIState() {
     const settings = getSettings();
@@ -551,26 +429,70 @@ function updateUIState() {
         contextDepth.value = settings.contextDepth;
         contextDepthValue.textContent = settings.contextDepth;
     }
-    const smartRegen = document.getElementById('ps_smartRegeneration');
-    if(smartRegen) {
-        smartRegen.checked = settings.smartRegeneration;
-    }
-    const debugMode = document.getElementById('ps_debugMode');
-    if(debugMode) {
-        debugMode.checked = settings.debugMode;
-    }
-    const analysisPrompt = document.getElementById('ps_analysisPrompt');
-    if(analysisPrompt) {
-        analysisPrompt.value = settings.analysisPromptTemplate || DEFAULT_ANALYSIS_PROMPT;
-    }
+    document.getElementById('ps_smartRegeneration').checked = settings.smartRegeneration;
+    document.getElementById('ps_debugMode').checked = settings.debugMode;
+    document.getElementById('ps_analysisPrompt').value = settings.analysisPromptTemplate || DEFAULT_ANALYSIS_PROMPT;
 }
 
+function initializeUI() {
+    const settings = getSettings();
 
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
+    document.getElementById('ps_enabled').onchange = (event) => {
+        settings.enabled = event.target.checked;
+        saveSettings();
+        updateUIState();
+        window.toastr.info(`PseudoBBL pipeline ${settings.enabled ? 'enabled' : 'disabled'}.`, LOG_PREFIX);
+    };
+
+    ['stage1', 'stage2'].forEach(stage => {
+        document.getElementById(`ps_${stage}SelectBtn`).onclick = () => showModelSelectorPopup(stage);
+    });
+
+    document.getElementById('ps_lorebookFile').onchange = (event) => {
+        settings.lorebookFile = event.target.value;
+        saveSettings();
+    };
+
+    const analysisPromptEl = document.getElementById('ps_analysisPrompt');
+    analysisPromptEl.oninput = () => {
+        settings.analysisPromptTemplate = analysisPromptEl.value;
+        saveSettings();
+    };
+    document.getElementById('ps_resetPrompt').onclick = () => {
+        analysisPromptEl.value = DEFAULT_ANALYSIS_PROMPT;
+        settings.analysisPromptTemplate = DEFAULT_ANALYSIS_PROMPT;
+        saveSettings();
+    };
+
+    const contextDepthEl = document.getElementById('ps_contextDepth');
+    contextDepthEl.oninput = () => {
+        settings.contextDepth = parseInt(contextDepthEl.value);
+        document.getElementById('ps_contextDepthValue').textContent = contextDepthEl.value;
+        saveSettings();
+    };
+
+    document.getElementById('ps_smartRegeneration').onchange = (event) => {
+        settings.smartRegeneration = event.target.checked;
+        saveSettings();
+    };
+
+    document.getElementById('ps_debugMode').onchange = (event) => {
+        settings.debugMode = event.target.checked;
+        saveSettings();
+    };
+
+    document.getElementById('ps_dryRun').onclick = runAnalysisDryRun;
+    document.getElementById('ps_clearCache').onclick = () => {
+        pipelineState.cachedAnalysis = null;
+        log('Analysis cache cleared');
+        window.toastr.info('Analysis cache cleared', LOG_PREFIX);
+    };
+    document.getElementById('ps_showDebug').onclick = showDebugLog;
+
+    log('UI initialized');
+}
+
 async function initializeExtension() {
-    log('Initializing Pipeline Scheduler...');
     try {
         const settings = getSettings();
 
@@ -579,12 +501,6 @@ async function initializeExtension() {
         
         document.getElementById('extensions_settings').insertAdjacentHTML('beforeend', settingsHtml);
         initializeUI();
-
-        const settingsErrors = validateSettings(settings);
-        if (settingsErrors.length > 0) {
-            log('Settings validation warnings', { errors: settingsErrors });
-            settings.enabled = false;
-        }
 
         if (!settings.stage2Model) {
             const context = getContext();
@@ -598,13 +514,13 @@ async function initializeExtension() {
         updateUIState();
 
         eventSource.makeLast(event_types.GENERATE_BEFORE, async () => {
-            const proceed = await handlePipelineTrigger(null, 'generate');
+            const proceed = await handlePipelineTrigger('generate');
             if (!proceed) pipelineState.cachedAnalysis = null;
         });
         eventSource.on(event_types.GENERATE_AFTER, () => restoreUserSettings());
 
         if (event_types.MESSAGE_SWIPED) {
-            eventSource.on(event_types.MESSAGE_SWIPED, () => log('Swipe detected, cache preserved'));
+            eventSource.on(event_types.MESSAGE_SWIPED, () => handlePipelineTrigger('swipe'));
         }
         eventSource.on(event_types.MESSAGE_DELETED, () => {
             pipelineState.cachedAnalysis = null;
@@ -616,91 +532,7 @@ async function initializeExtension() {
     } catch (error) {
         console.error(`${LOG_PREFIX} Initialization failed:`, error);
         window.toastr.error(`Failed to initialize: ${error.message}. Check console (F12).`, LOG_PREFIX);
-        pipelineState.isReady = false;
     }
-}
-
-function initializeUI() {
-    const settings = getSettings();
-
-    const enableToggle = document.getElementById('ps_enabled');
-    if (enableToggle) {
-        enableToggle.onchange = () => {
-            settings.enabled = enableToggle.checked;
-            saveSettings();
-            updateUIState();
-            window.toastr.info(`PseudoBBL pipeline ${settings.enabled ? 'enabled' : 'disabled'}.`, LOG_PREFIX);
-        };
-    }
-
-    ['stage1', 'stage2'].forEach(stage => {
-        const selectBtn = document.getElementById(`ps_${stage}SelectBtn`);
-        if (selectBtn) selectBtn.onclick = () => showModelSelectorPopup(stage);
-    });
-
-    const lorebookSelect = document.getElementById('ps_lorebookFile');
-    if (lorebookSelect) {
-        lorebookSelect.onchange = () => {
-            settings.lorebookFile = lorebookSelect.value;
-            saveSettings();
-        };
-    }
-
-    const analysisPrompt = document.getElementById('ps_analysisPrompt');
-    const resetPromptBtn = document.getElementById('ps_resetPrompt');
-    if (analysisPrompt && resetPromptBtn) {
-        analysisPrompt.oninput = () => {
-            settings.analysisPromptTemplate = analysisPrompt.value;
-            saveSettings();
-        };
-        resetPromptBtn.onclick = () => {
-            analysisPrompt.value = DEFAULT_ANALYSIS_PROMPT;
-            settings.analysisPromptTemplate = DEFAULT_ANALYSIS_PROMPT;
-            saveSettings();
-        };
-    }
-
-    const contextDepth = document.getElementById('ps_contextDepth');
-    if (contextDepth) {
-        contextDepth.oninput = () => {
-            settings.contextDepth = parseInt(contextDepth.value);
-            document.getElementById('ps_contextDepthValue').textContent = contextDepth.value;
-            saveSettings();
-        };
-    }
-
-    const smartRegen = document.getElementById('ps_smartRegeneration');
-    if (smartRegen) {
-        smartRegen.onchange = () => {
-            settings.smartRegeneration = smartRegen.checked;
-            saveSettings();
-        };
-    }
-
-    const debugMode = document.getElementById('ps_debugMode');
-    if (debugMode) {
-        debugMode.onchange = () => {
-            settings.debugMode = debugMode.checked;
-            saveSettings();
-        };
-    }
-
-    const dryRunBtn = document.getElementById('ps_dryRun');
-    if (dryRunBtn) dryRunBtn.onclick = runAnalysisDryRun;
-    
-    const clearCacheBtn = document.getElementById('ps_clearCache');
-    if (clearCacheBtn) {
-        clearCacheBtn.onclick = () => {
-            pipelineState.cachedAnalysis = null;
-            log('Analysis cache cleared');
-            window.toastr.info('Analysis cache cleared', LOG_PREFIX);
-        };
-    }
-    
-    const showDebugBtn = document.getElementById('ps_showDebug');
-    if (showDebugBtn) showDebugBtn.onclick = showDebugLog;
-
-    log('UI initialized');
 }
 
 // ============================================================================

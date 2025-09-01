@@ -594,7 +594,7 @@ async function initializeExtension() {
             const proceed = await handlePipelineTrigger(null, 'generate');
             if (!proceed) pipelineState.cachedAnalysis = null;
         });
-        eventSource.on(event_types.GENERATE_AFTER, restoreUserSettings);
+        eventSource.on(event_types.GENERATE_AFTER, () => restoreUserSettings());
 
         if (event_types.MESSAGE_SWIPED) {
             eventSource.on(event_types.MESSAGE_SWIPED, () => log('Swipe detected, cache preserved'));
@@ -708,10 +708,8 @@ function initializeUI() {
 // ============================================================================
 // EXTENSION ENTRY POINT
 // ============================================================================
-$(document).ready(() => {
     eventSource.on(event_types.APP_READY, () => {
         log('App ready, initializing extension...');
         setTimeout(initializeExtension, 100);
         setInterval(cleanupResources, 300000); // Run cleanup every 5 minutes
-    });
 });

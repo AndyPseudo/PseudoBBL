@@ -85,9 +85,10 @@ const API_TO_SELECTOR_MAP = Object.freeze({
 // ============================================================================
 //  IMPORTS & MODULE-LEVEL VARIABLES
 // ============================================================================
-import { eventSource, event_types, saveSettings } from '../../../../script.js';
-import { extension_settings, getContext } from '../../../extensions.js';
-import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
+//
+import { eventSource, event_types, saveSettings } from '/script.js';
+import { extension_settings, getContext } from '/scripts/extensions.js';
+import { callGenericPopup, POPUP_TYPE } from '/scripts/popup.js';
 
 let pipelineState = {
     isReady: false,
@@ -349,7 +350,6 @@ async function applySmartRegeneration() {
     if (!lastMessage) return;
     const firstSentence = lastMessage.split(/[.!?]/)[0];
     const regenPrompt = `[System: User has requested a regeneration. Provide an alternative response. Avoid repeating the previous attempt, which started with: "${firstSentence}"]`;
-    // FIX: Use a valid and reliable injection position. 'after' is a standard position.
     await getContext().executeSlashCommandsWithOptions(`/inject id=ps_smart_regen position=after depth=0 ${JSON.stringify(regenPrompt)}`, { showOutput: false });
     log('Smart regeneration prompt injected.');
 }
@@ -595,12 +595,10 @@ function updateUIState() {
 
 function bindCoreEventListeners() {
     const eventToUse = event_types.GENERATE_BEFORE_COMBINE_PROMPTS || event_types.GENERATE_BEFORE;
-    // FIX: Ensure the handler is async and awaits the trigger function
     eventSource.makeLast(eventToUse, async (data) => {
         return await handlePipelineTrigger(data);
     });
 
-    // FIX: Add robust error handling for post-generation cleanup
     eventSource.on(event_types.GENERATE_AFTER, async () => {
         try {
             await restoreUserSettings();

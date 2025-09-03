@@ -654,6 +654,4 @@ async function initializeExtension() {
     }
 }
 
-$(document).ready(() => {
-    setTimeout(() => eventSource.on(event_types.APP_READY, () => initializeExtension()), 100);
-});
+eventSource.on(event_types.APP_READY, () => initializeExtension());

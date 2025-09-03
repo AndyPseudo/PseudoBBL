@@ -1,7 +1,7 @@
 {
     "display_name": "PseudoBBL",
     "loading_order": 100,
-    "requires": [],
+    "requires": ["LALib"],
     "js": "index.js",
     "css": "styles.css",
     "author": "Pseudo & Claude",

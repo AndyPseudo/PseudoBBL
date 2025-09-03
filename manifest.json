@@ -1,9 +1,9 @@
 {
     "display_name": "PseudoBBL",
     "loading_order": 100,
-    "requires": ["LALib"],
+    "requires": [],
     "js": "index.js",
-    "css": "styles.css",
+    "css": "style.css",
     "author": "Pseudo & Claude",
     "version": "1.0.0",
     "description": "Two-stage AI pipeline with analysis agent for dynamic reasoning prompt selection",
